@@ -77,10 +77,13 @@ function Compiler(node, options) {
   if (this.debug && this.inlineRuntimeFunctions) {
     this.runtimeFunctionsUsed.push('rethrow');
   }
-
   this.codeBuffer = '{';
   this.codeMarker = {};
   this.codeIndex = -1;
+
+  this.useGenerators = false;
+  this.templateVars = ['locals']
+
 };
 
 /**
@@ -112,6 +115,46 @@ Compiler.prototype = {
   parseArgs: function(args) {
     return babylon.parse("plug("+args+")").program.body.pop().expression.arguments;
   },
+  btpl_addWith: function() {
+    var globals = this.options.globals ? this.options.globals.concat(INTERNAL_VARIABLES) : INTERNAL_VARIABLES;
+    globals.concat(this.runtimeFunctionsUsed.map(function (name) { return 'pug_' + name; }));
+    var tpl = "// @with exclude: "+ globals.join(",") +"\n{\nlocals || {};\nSOURCE;\n}"
+    var tplc = babelTemplate(tpl, { preserveComments: true });
+    return tplc;
+  },
+  ast_variableDeclaration: function() {
+    return t.variableDeclaration('var', [
+          t.variableDeclarator(t.identifier('pug_html'), t.stringLiteral('')),
+          t.variableDeclarator(t.identifier('pug_mixins'), t.objectExpression([])),
+          t.variableDeclarator(t.identifier('pug_interp'), null)
+        ])
+  },
+  ast_return: function() {
+    return [t.emptyStatement(), t.returnStatement(t.identifier('pug_html'))];
+  },
+  ast_stringify: function(lit) {
+    lit.extra = { rawValue: lit.value, raw: stringify(lit.value) };
+    return lit;
+  },
+  wrapCallExpression: function(node) {
+    return node;
+  },
+  ast_initBufferedOp: function(node) {
+    return t.binaryExpression('+',
+              t.identifier('pug_html'),
+              node
+            );
+  },
+  ast_pushBufferedOp: function(node) {
+    return t.expressionStatement(
+              t.assignmentExpression('=',
+                t.identifier('pug_html'),
+                node)
+            );
+  },
+  ast_addBufferedOp: function(left, right) {
+    return t.binaryExpression('+', left, right);
+  },
   /**
    * Compile parse tree to JavaScript.
    *
@@ -123,9 +166,6 @@ Compiler.prototype = {
     if (this.pp) {
       this.ast.push(t.variableDeclaration('var', [t.variableDeclarator(t.identifier('pug_indent'), t.arrayExpression())]));
     }
-    //REMSTART
-    this.buf = [];
-    //REMEND
     this.lastBufferedIdx = -1;
     this.visit(this.node);
     if (!this.dynamicMixins) {
@@ -151,13 +191,13 @@ Compiler.prototype = {
         ])
       ].concat(this.ast);
     } else {
-      // addWith babel equivalent
-      var globals = this.options.globals ? this.options.globals.concat(INTERNAL_VARIABLES) : INTERNAL_VARIABLES;
-      globals.concat(this.runtimeFunctionsUsed.map(function (name) { return 'pug_' + name; }));
-      var tpl = "// @with exclude: "+ globals.join(",") +"\n{\nlocals || {};\nSOURCE;\n}"
-      var tplc = babelTemplate(tpl, { preserveComments: true });
+
+      // prepare block for babel-plugin-transform-with 
+      var tplc = this.btpl_addWith();
       ast = tplc({ SOURCE: this.ast })
+      // bypass bug of babel-template preserveComments option
       ast.leadingComments = tplc().leadingComments;
+
       ast = [ast];
     }
 
@@ -199,13 +239,8 @@ Compiler.prototype = {
 
     this.ast = t.functionDeclaration(
       t.identifier(this.options.templateName || 'template'),
-      [t.identifier('locals')],
-      t.blockStatement([
-        t.variableDeclaration('var', [
-          t.variableDeclarator(t.identifier('pug_html'), t.stringLiteral('')),
-          t.variableDeclarator(t.identifier('pug_mixins'), t.objectExpression([])),
-          t.variableDeclarator(t.identifier('pug_interp'), null)
-        ])].concat(ast, [t.emptyStatement(), t.returnStatement(t.identifier('pug_html'))]))
+      this.templateVars.map(function(v) { return t.identifier(v)}),
+      t.blockStatement([this.ast_variableDeclaration()].concat(ast, this.ast_return()))
     )
 
 
@@ -247,33 +282,21 @@ Compiler.prototype = {
     var self = this;
     if (this.lastBufferedIdx == this.ast.length && this.bufferedConcatenationCount < 100) {
       if (this.lastBufferedType === 'code') {
-        this.lastBufferedOp.left = t.binaryExpression('+',
-                                      this.lastBufferedOp.left,
-                                      this.lastBufferedOp.right
-                                    )
-        this.lastBufferedOp.right = str;
-        this.lastBuffered = '';
-        this.bufferedConcatenationCount++;
+          this.lastBuffered = t.stringLiteral('');
+          this.lastBufferedOp = this.ast_addBufferedOp(this.lastBufferedOp, this.lastBuffered);
+          this.bufferedConcatenationCount++;
       }
-      this.lastBufferedType = 'text';
-      this.lastBuffered += str;
-      var lit = t.stringLiteral(this.lastBuffered);
-      lit.extra = { rawValue: lit.value, raw: stringify(this.lastBuffered) };
-      this.lastBufferedOp.right = lit;
+      this.lastBuffered.value += str;
+      this.ast_stringify(this.lastBuffered);
+      this.ast[this.lastBufferedIdx - 1] = this.ast_pushBufferedOp(this.lastBufferedOp);
     } else {
       this.bufferedConcatenationCount = 0;
-      this.lastBufferedOp = t.binaryExpression('+',
-                              t.identifier('pug_html'),
-                              t.stringLiteral(str)
-                            )
-      this.ast.push(t.expressionStatement(
-                      t.assignmentExpression('=',
-                        t.identifier('pug_html'),
-                        this.lastBufferedOp)));
-      this.lastBufferedType = 'text';
-      this.lastBuffered = str;
+      this.lastBuffered = this.ast_stringify(t.stringLiteral(str));
+      this.lastBufferedOp = this.ast_initBufferedOp(this.lastBuffered);
+      this.ast.push(this.ast_pushBufferedOp(this.lastBufferedOp));
       this.lastBufferedIdx = this.ast.length;
     }
+    this.lastBufferedType = 'text';
   },
 
   /**
@@ -291,27 +314,16 @@ Compiler.prototype = {
 
     if (this.lastBufferedIdx == this.ast.length && this.bufferedConcatenationCount < 100) {
       this.bufferedConcatenationCount++;
-      this.lastBufferedOp.left = t.binaryExpression('+',
-                                      this.lastBufferedOp.left,
-                                      this.lastBufferedOp.right
-                                    )
-      this.lastBufferedOp.right = body;
-      this.lastBuffered = '';
-      this.lastBufferedType = 'code';
+      this.lastBufferedOp = this.ast_addBufferedOp(this.lastBufferedOp, body);
+      this.lastBuffered = t.stringLiteral('');
+      this.ast[this.lastBufferedIdx - 1] = this.ast_pushBufferedOp(this.lastBufferedOp);
     } else {
-      this.lastBufferedOp = t.binaryExpression('+',
-                              t.identifier('pug_html'),
-                              body
-                            )
-      this.ast.push(t.expressionStatement(
-                      t.assignmentExpression('=',
-                        t.identifier('pug_html'),
-                        this.lastBufferedOp)));
-      
       this.bufferedConcatenationCount = 0;
-      this.lastBufferedType = 'code';
+      this.lastBufferedOp = this.ast_initBufferedOp(body);
+      this.ast.push(this.ast_pushBufferedOp(this.lastBufferedOp));
       this.lastBufferedIdx = this.ast.length;
     }
+    this.lastBufferedType = 'code';
   },
 
   /**
@@ -507,7 +519,7 @@ Compiler.prototype = {
     this.ast.push(
       t.logicalExpression('&&',
         t.identifier('block'),
-        t.callExpression(t.identifier('block'), [])
+        this.wrapCallExpression(t.callExpression(t.identifier('block'), []))
       )
     );
     if (this.pp) {
@@ -571,13 +583,13 @@ Compiler.prototype = {
 
         var astArgs = []
         this.ast.push(
-          t.expressionStatement(t.callExpression(
+          t.expressionStatement(this.wrapCallExpression(t.callExpression(
             t.memberExpression(
               t.memberExpression(t.identifier('pug_mixins'), mixinName, true),
               t.identifier("call")
             ),
             astArgs
-          ))
+          )))
         );
 
         var astObj, astKey;
@@ -594,7 +606,8 @@ Compiler.prototype = {
             t.functionExpression(
               null,
               [],
-              t.blockStatement(astFunc)
+              t.blockStatement(astFunc),
+              this.useGenerators
             )
           ));
         
@@ -644,10 +657,10 @@ Compiler.prototype = {
 
       } else {
         var astArgs = this.parseArgs(args);
-        this.ast.push(t.expressionStatement(t.callExpression(
+        this.ast.push(t.expressionStatement(this.wrapCallExpression(t.callExpression(
           t.memberExpression(t.identifier('pug_mixins'), mixinName, true),
           astArgs
-        )));
+        ))));
       }
       if (pp) {
         this.ast.push(t.expressionStatement(t.callExpression(
@@ -657,7 +670,6 @@ Compiler.prototype = {
  
       }
     } else {
-      var mixin_start = this.buf.length;
       args = args ? args.split(',') : [];
       var rest;
       if (args.length && /^\.\.\./.test(args[args.length - 1].trim())) {
@@ -678,7 +690,8 @@ Compiler.prototype = {
               t.functionExpression(
                 null,
                 astArgs,
-                t.blockStatement(astMixin)
+                t.blockStatement(astMixin),
+                this.useGenerators
               )
             )
           )
@@ -730,7 +743,6 @@ Compiler.prototype = {
       this.replaceAstBlock(savedAST);
       this.parentIndents--;
 
-      var mixin_end = this.buf.length;
       this.mixins[key].instances.push({stmt: mixinStmt});
     }
   },
@@ -1027,7 +1039,8 @@ Compiler.prototype = {
                       t.functionExpression(
                         null,
                         [],
-                        t.blockStatement(body)
+                        t.blockStatement(body),
+                        this.useGenerators
                       ),
                       t.identifier('call')
                     )
