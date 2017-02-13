@@ -77,7 +77,7 @@ function Compiler(node, options) {
   if (this.debug && this.inlineRuntimeFunctions) {
     this.runtimeFunctionsUsed.push('rethrow');
   }
-  this.codeBuffer = '{';
+  this.codeBuffer = '_=function*(){';
   this.codeMarker = {};
   this.codeIndex = -1;
 
@@ -936,7 +936,7 @@ Compiler.prototype = {
         var savedCodeBuffer = this.codeBuffer;
         var savedCodeMarker = this.codeMarker;
         var savedCodeIndex = this.codeIndex;
-        this.codeBuffer = '{';
+        this.codeBuffer = '_=function*(){';
         this.codeMarker = {};
         this.codeIndex = -1;
         */
@@ -952,14 +952,15 @@ Compiler.prototype = {
       var idx = ctx.nodes.indexOf(code) + 1;
       if (idx == ctx.nodes.length || ctx.nodes[idx].type != 'Code' || ctx.nodes[idx].buffer) {
         try {
-          var tpl = babelTemplate(this.codeBuffer + '}');
+          var src = this.codeBuffer + '}';
+          var tpl = babelTemplate(src);
           var ast = tpl(this.codeMarker);
-          Array.prototype.push.apply(this.ast, ast.body);
-          this.codeBuffer = '{';
+          Array.prototype.push.apply(this.ast, ast.expression.right.body.body);
+          this.codeBuffer = '_=function*(){';
           this.codeIndex = -1;
           this.codeMarker = {};
         } catch(e) {
-          var codeError = this.codeBuffer.substr(1).trim()
+          var codeError = this.codeBuffer.substr(14).trim()
           this.error('Unbuffered code structure could not be parsed; ' + e.message + ' in ' + codeError, codeError, code)
         }
       }
