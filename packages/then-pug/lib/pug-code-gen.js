@@ -15,7 +15,7 @@ var INTERNAL_VARIABLES = [
 /**
  * Module dependencies.
  */
-var BaseCodeGenerator = require('pug-code-gen').CodeGenerator;
+var BaseCodeGenerator = require('./pug-code-gen-module.js').CodeGenerator;
 var t = require('babel-types');
 var babelTemplate = require('babel-template');
 
