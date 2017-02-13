@@ -110,10 +110,10 @@ Compiler.prototype = {
   },
 
   parseExpr: function(expr) {
-    return babylon.parse('plug='+expr).program.body.pop().expression.right;
+    return babylon.parse('function*g(){return e='+expr+'}').program.body[0].body.body[0].argument.right;
   },
   parseArgs: function(args) {
-    return babylon.parse("plug("+args+")").program.body.pop().expression.arguments;
+    return babylon.parse("a("+args+")").program.body.pop().expression.arguments;
   },
   btpl_addWith: function() {
     var globals = this.options.globals ? this.options.globals.concat(INTERNAL_VARIABLES) : INTERNAL_VARIABLES;
