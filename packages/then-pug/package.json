@@ -1,7 +1,7 @@
 {
   "name": "then-pug",
   "description": "An async, streaming version of the pug templating language",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Jérôme Wagner",
   "license": "MIT",
   "repository": {
