@@ -341,6 +341,7 @@ Compiler.prototype = {
     this.buffer(newline + Array(this.indents + offset).join(this.pp));
     if (this.parentIndents) {
 
+/*
       this.ast.push(t.expressionStatement(
                       t.assignmentExpression('=',
                         t.identifier('pug_html'),
@@ -351,6 +352,12 @@ Compiler.prototype = {
                                 [t.stringLiteral('')]
                               )
                             ))));
+*/
+      this.ast.push(this.ast_pushBufferedOp(this.ast_initBufferedOp(t.callExpression(
+                                t.memberExpression(t.identifier('pug_indent'), t.identifier('join')),
+                                [t.stringLiteral('')]
+                              ))));
+
     }
   },
 
@@ -1034,7 +1041,7 @@ Compiler.prototype = {
                 ]
 
     var func =  t.expressionStatement(
-                  t.callExpression(
+                  this.wrapCallExpression(t.callExpression(
                     t.memberExpression(
                       t.functionExpression(
                         null,
@@ -1045,7 +1052,7 @@ Compiler.prototype = {
                       t.identifier('call')
                     )
                     ,[t.thisExpression()]
-                  )
+                  ))
                 )
     this.ast.push(func)
 

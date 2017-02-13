@@ -303,8 +303,6 @@ function compileStreaming(str, options) {
   return res;
 */
 
-  console.log('THEN-PUG', parsed.body)
-
   // get a generator function that takes `(locals, jade, buf)`
   var fn;
   if (hasGenerators) {
@@ -385,9 +383,11 @@ function compileStreaming(str, options) {
 
 exports.compile = function(str, options){
   var fn = compileStreaming(str, options);
-  return function (locals, callback) {
+  var res = function (locals, callback) {
     return fn(locals).buffer('utf8', callback);
   }
+  res.dependencies = fn.dependencies;
+  return res;
 };
 
 /**
@@ -491,7 +491,12 @@ exports.compileFile = function (path, options) {
 exports.render = render;
 function render(str, options, callback) {
   return Promise.resolve(null).then(function () {
-    var fn = compileStreaming(str, options);
+    options = options || {};
+    // cache requires .filename
+    if (options.cache && !options.filename) {
+      throw new Error('the "filename" option is required for caching');
+    }
+    var fn = handleTemplateCache(options, str);
     return fn(options).buffer('utf8');
   }).nodeify(callback);
 }
@@ -515,7 +520,12 @@ function render(str, options, callback) {
  */
 exports.renderStreaming = renderStreaming;
 function renderStreaming(str, options) {
-  return compileStreaming(str, options)(options);
+  options = options || {};
+  // cache requires .filename
+  if (options.cache && !options.filename) {
+    throw new Error('the "filename" option is required for caching');
+  }
+  return handleTemplateCache(options, str)(options);
 }
 
 /**
