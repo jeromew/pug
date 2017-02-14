@@ -69,7 +69,7 @@ function Compiler(node, options) {
   this.parentIndents = 0;
   this.terse = false;
   this.mixins = {};
-  this.dynamicMixins = options.dynamicMixins || false;
+  this.dynamicMixins = false;
   this.eachCount = 0;
   if (options.doctype) this.setDoctype(options.doctype);
   this.runtimeFunctionsUsed = [];

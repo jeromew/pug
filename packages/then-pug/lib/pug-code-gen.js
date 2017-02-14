@@ -30,6 +30,7 @@ function generateCode(ast, options) {
 
 function Compiler(node, options) {
   BaseCodeGenerator.call(this, node, options);
+  this.dynamicMixins = true;
   this.useGenerators = true;
   this.templateVars = ['locals', 'pug', 'buf'];
 }
