@@ -932,20 +932,19 @@ Compiler.prototype = {
         // - }
         // but breaks the "should be reasonably fast" compile test
         // note: we should add a test for this in pug
-        /*
         var savedCodeBuffer = this.codeBuffer;
         var savedCodeMarker = this.codeMarker;
         var savedCodeIndex = this.codeIndex;
         this.codeBuffer = '_=function*(){';
         this.codeMarker = {};
         this.codeIndex = -1;
-        */
+
         this.visit(code.block, code);
-        /*
+        
         this.codeBuffer = savedCodeBuffer;
         this.codeMarker = savedCodeMarker;
         this.codeIndex = savedCodeIndex;
-        */
+        
         this.replaceAstBlock(savedAST);
       }
 
